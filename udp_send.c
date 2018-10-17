@@ -18,11 +18,11 @@ int main() {
 	}
 
 	//make server address
-	struct sockaddr_in servaddr;
-	memset(&servaddr, 0, sizeof(servaddr));
-	servaddr.sin_family = AF_INET;
-	servaddr.sin_addr.s_addr = inet_addr("127.0.0.1");
-	servaddr.sin_port = htons(32000);
+	struct sockaddr_in server_address;
+	memset(&server_address, 0, sizeof(server_address));
+	server_address.sin_family = AF_INET;
+	server_address.sin_addr.s_addr = inet_addr("127.0.0.1");
+	server_address.sin_port = htons(32000);
 
 	//Send messages
 	char send_buffer[1024]; 
@@ -34,8 +34,8 @@ int main() {
 			send_buffer, 
 			sizeof(send_buffer), 
 			0,
-			(struct sockaddr *) &servaddr,
-			sizeof(servaddr));
+			(struct sockaddr *) &server_address,
+			sizeof(server_address));
 
 		if (ret <= 0)
 		{
