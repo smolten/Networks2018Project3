@@ -1,0 +1,8 @@
+1. 
+	you->server#some_message
+	server->you#Error: Unrecognized message format
+	server->you#hello
+
+
+2.	per-client
+	(client_ip:client_port)->server#msg
