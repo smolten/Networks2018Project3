@@ -14,7 +14,7 @@
 int socket_listen, socket_send;
 void sigintHandler(int sig_num) {
     close(socket_listen);
-    close(socket_listen);
+    close(socket_send);
     printf("sockets closed\n");
     exit(0);
 }

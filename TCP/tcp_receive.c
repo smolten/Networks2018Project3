@@ -6,6 +6,20 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <signal.h>
+#include <stdbool.h>
+
+//Intercept exit signal and close sockets before exiting
+int listenfd;
+void closeSockets() {
+    close(listenfd);
+    printf("sockets closed\n");
+}
+void sigintHandler(int sig_num)
+{   
+    closeSockets();
+    exit(0);
+}
 
 // This line must be included if you want to use multithreading.
 // Besides, use "gcc ./tcp_receive.c -lpthread -o tcp_receive" to compile
@@ -17,87 +31,104 @@
 // "void *" and return a value of type "void *". 
 void *worker_thread(void *arg) {
 
-    int ret;
     int connfd = (int) (long)arg;
     char recv_buffer[1024];
-
     printf("[%d] worker thread started.\n", connfd);
-
-    while (1) {
-        ret = recv(connfd, 
-                    recv_buffer, 
-                    sizeof(recv_buffer), 
-                    0);
-
+    char filename[1024];
+    int filesize = -1;
+    int bytesRecv = 0;
+    FILE* file = NULL;
+    while (filesize == -1 || bytesRecv < filesize)
+    {
+        int ret = recv(connfd, recv_buffer, sizeof(recv_buffer), 0);
         if (ret < 0) {
-            // Input / output error.
-        printf("[%d] recv() error: %s.\n", connfd, strerror(errno));
+            printf("[%d] recv() error: %s.\n", connfd, strerror(errno));
             return NULL;
         } else if (ret == 0) {
             // The connection is terminated by the other end.
-        printf("[%d] connection lost\n", connfd);
+            printf("[%d] connection lost\n", connfd);
             break;
         }
 
-        // TODO: Process your message, receive chunks of the byte stream, 
-        // write the chunks to a file. Here I just print it on the screen.
+        if (filesize == -1) {
+            int read = sscanf(recv_buffer, "%d %s", &filesize, filename);
+            if (read != 2) {
+                printf("Can't parse filesize and name \"%s\"\n", recv_buffer);
+                closeSockets();
+                exit(-1);
+            }
+            printf("[%d] Receiving \"%s\", size is %d bytes\n", connfd, filename, filesize);
+            file = fopen(filename, "wb");
 
-        printf("[%d]%s", connfd, recv_buffer);
+            //Don't write file metadata to file
+            continue;
+        }
+
+        int bytesRead = ret;
+        bytesRecv += bytesRead;
+        fwrite(recv_buffer, 1, bytesRead, file);
+        printf("Read %d of %d bytes...\n", bytesRecv, filesize);
     }
 
+    printf("Wrote %d bytes of %s\n", filesize, filename);
+    fclose(file);
     printf("[%d] worker thread terminated.\n", connfd);
 }
 
 
 // The main thread, which only accepts new connections. Connection socket
 // is handled by the worker thread.
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[])
+{
 
-    int ret;
-    socklen_t len;
-    int listenfd = 0, connfd = 0;
-    struct sockaddr_in serv_addr;
-    struct sockaddr_in client_addr;
+    //Redirect close to custom function
+    signal(SIGINT, sigintHandler);
+
 
     listenfd = socket(AF_INET, SOCK_STREAM, 0);
     if (listenfd < 0) {
-  printf("socket() error: %s.\n", strerror(errno));
+        printf("socket() error: %s.\n", strerror(errno));
+        closeSockets();
         return -1;
     }
 
+    struct sockaddr_in serv_addr;
     memset(&serv_addr, 0, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     serv_addr.sin_port = htons(31000);
 
-    ret = bind(listenfd, (struct sockaddr*) 
-               &serv_addr, sizeof(serv_addr));
+    int ret = bind(listenfd, (struct sockaddr*) 
+    &serv_addr, sizeof(serv_addr));
     if (ret < 0) {
-      printf("bind() error: %s.\n", strerror(errno));
+        printf("bind() error: %s.\n", strerror(errno));
+        closeSockets();
         return -1;
     }
-
 
     if (listen(listenfd, 10) < 0) {
-      printf("listen() error: %s.\n", strerror(errno));
+        printf("listen() error: %s.\n", strerror(errno));
+        closeSockets();
         return -1;
     }
 
+    socklen_t len;
+    struct sockaddr_in client_addr;
     while (1) {
-      printf("waiting for connection...\n");
-        connfd = accept(listenfd, 
-                 (struct sockaddr*) &client_addr, 
-                 &len);
+        printf("waiting for connection...\n");
+        int connfd = accept(listenfd, (struct sockaddr*) &client_addr, &len);
 
         if(connfd < 0) {
-        printf("accept() error: %s.\n", strerror(errno));
+            printf("accept() error: %s.\n", strerror(errno));
+            closeSockets();
             return -1;
         }
-      printf("conn accept - %s.\n", inet_ntoa(client_addr.sin_addr));
+        printf("conn accept - %s.\n", inet_ntoa(client_addr.sin_addr));
 
-      pthread_t tid;
-      pthread_create(&tid, NULL, worker_thread, (void *)connfd);
-
+        pthread_t tid;
+        pthread_create(&tid, NULL, worker_thread, (void *)connfd);
     }
+
+    closeSockets();
     return 0;
 }

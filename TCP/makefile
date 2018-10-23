@@ -1,10 +1,10 @@
 tcp: tcp_receive tcp_send
 
 tcp_receive: tcp_receive.o
-	gcc ./tcp_receive.c -o tcp_receive
+	gcc -w ./tcp_receive.c -o tcp_receive
 
 tcp_send: tcp_send.o
-	gcc ./tcp_send.c -o tcp_send
+	gcc -w ./tcp_send.c -o tcp_send
 
 clean:
 	-rm *.o
