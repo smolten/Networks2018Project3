@@ -12,6 +12,7 @@
 //Intercept exit signal and close sockets before exiting
 int listenfd;
 void closeSockets() {
+    shutdown(listenfd, SHUT_RDWR);
     close(listenfd);
     printf("sockets closed\n");
 }
@@ -32,47 +33,62 @@ void sigintHandler(int sig_num)
 void *worker_thread(void *arg) {
 
     int connfd = (int) (long)arg;
-    char recv_buffer[1024];
     printf("[%d] worker thread started.\n", connfd);
-    char filename[1024];
-    int filesize = -1;
-    int bytesRecv = 0;
-    FILE* file = NULL;
-    while (filesize == -1 || bytesRecv < filesize)
-    {
-        int ret = recv(connfd, recv_buffer, sizeof(recv_buffer), 0);
-        if (ret < 0) {
-            printf("[%d] recv() error: %s.\n", connfd, strerror(errno));
-            return NULL;
-        } else if (ret == 0) {
-            // The connection is terminated by the other end.
-            printf("[%d] connection lost\n", connfd);
-            break;
-        }
 
-        if (filesize == -1) {
-            int read = sscanf(recv_buffer, "%d %s", &filesize, filename);
-            if (read != 2) {
-                printf("Can't parse filesize and name \"%s\"\n", recv_buffer);
-                closeSockets();
-                exit(-1);
+    while (1) {
+
+        int filesize = -1;
+        int bytesRecv = 0;
+        FILE* file = NULL;
+        char recv_buffer[1024];
+        char filename[1024];
+        memset(recv_buffer,'\0', 1024);
+        memset(filename,'\0', 1024);
+        while (filesize == -1 || bytesRecv < filesize)
+        {
+            //Receive data
+            int ret = recv(connfd, recv_buffer, sizeof(recv_buffer), 0);
+            if (ret < 0) {
+                printf("[%d] recv() error: %s.\n", connfd, strerror(errno));
+                return NULL;
+            } else if (ret == 0) {
+                // The connection is terminated by the other end.
+                printf("[%d] connection lost\n", connfd);
+                return NULL;
             }
-            printf("[%d] Receiving \"%s\", size is %d bytes\n", connfd, filename, filesize);
-            file = fopen(filename, "wb");
+            //printf("[%d] RECV %s\n", connfd, recv_buffer);
 
-            //Don't write file metadata to file
-            continue;
+            //Read metadata if it has not yet been read
+            if (filesize == -1) {
+                int read = sscanf(recv_buffer, "%d %s", &filesize, filename);
+                if (read != 2) {
+                    printf("Can't parse filesize and name from \"%s\"\n", recv_buffer);
+                    closeSockets();
+                    exit(-1);
+                }
+                file = fopen(filename, "wb");
+                //printf("[%d] Receiving \"%s\", size is %d bytes\n", connfd, filename, filesize);
+
+                //Don't write file metadata to file
+                continue;
+            }
+
+            //Limit writing to filesize # of bytes
+            int bytesRead = ret;
+            bytesRecv += bytesRead;
+
+            //write to file
+            fwrite(recv_buffer, 1, bytesRead, file);
+            printf("Read %d of %d bytes...\n", bytesRecv, filesize);
         }
 
-        int bytesRead = ret;
-        bytesRecv += bytesRead;
-        fwrite(recv_buffer, 1, bytesRead, file);
-        printf("Read %d of %d bytes...\n", bytesRecv, filesize);
+        printf("Wrote %d bytes of %s\n", filesize, filename);
+        fclose(file);
     }
 
-    printf("Wrote %d bytes of %s\n", filesize, filename);
-    fclose(file);
-    printf("[%d] worker thread terminated.\n", connfd);
+
+    printf("[%d] worker thread terminated.\n\n", connfd);
+    return NULL;
 }
 
 
@@ -84,7 +100,7 @@ int main(int argc, char *argv[])
     //Redirect close to custom function
     signal(SIGINT, sigintHandler);
 
-
+    //Get listen socket
     listenfd = socket(AF_INET, SOCK_STREAM, 0);
     if (listenfd < 0) {
         printf("socket() error: %s.\n", strerror(errno));
@@ -92,20 +108,20 @@ int main(int argc, char *argv[])
         return -1;
     }
 
+    //Get server adress
     struct sockaddr_in serv_addr;
     memset(&serv_addr, 0, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     serv_addr.sin_port = htons(31000);
 
-    int ret = bind(listenfd, (struct sockaddr*) 
-    &serv_addr, sizeof(serv_addr));
+    //Attempt to bnd and listen
+    int ret = bind(listenfd, (struct sockaddr*) &serv_addr, sizeof(serv_addr));
     if (ret < 0) {
         printf("bind() error: %s.\n", strerror(errno));
         closeSockets();
         return -1;
     }
-
     if (listen(listenfd, 10) < 0) {
         printf("listen() error: %s.\n", strerror(errno));
         closeSockets();
