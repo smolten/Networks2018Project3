@@ -7,94 +7,67 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <strings.h>
+#include <stdbool.h>
+#include <signal.h>
+
+//Intercept exit signal and close sockets before exiting
+int socket_listen, socket_send;
+void sigintHandler(int sig_num) {
+    close(socket_listen);
+    close(socket_listen);
+    printf("sockets closed\n");
+    exit(0);
+}
 
 int main(int argc, char *argv[]) {
 
-	//Set mode
-	int isClient = 1;
-	if (argc < 2)
-	{
-		printf("Running as Client by default.\nYou can specify a mode with \"server\" or \"client\" argument (No quotes)\n");
-	} else if (argc == 2) {
-		int serverCompare = strcasecmp(argv[1], "server");
-		int clientCompare = strcasecmp(argv[1], "client");
-		if (serverCompare == 0) {
-			isClient = 0;
-		} else if (clientCompare != 0) {
-			printf ("ERROR: Invalid argument \"%s\"\nYou can specify a mode with \"server\" or \"client\" argument (No quotes)\nExiting...\n", argv[1]);
-			return -1;
-		}
+    //Redirect close to custom function
+    signal(SIGINT, sigintHandler);
 
-		char* mode = isClient == 1 ? "Client" : "Server";
-		printf("Running as %s...\n", mode);
-	} else {
-		printf("ERROR: Too many arguments. Exiting...\n");
-		return -1;
-	}
+    //LISTEN
 
     //Claim listen socket
-    int socket_listen = socket(AF_INET, SOCK_DGRAM, 0);
+    socket_listen = socket(AF_INET, SOCK_DGRAM, 0);
     if (socket_listen < 0)
     {
         printf("socket() error: %s.\n", strerror(errno));
         return -1;
     }
-
-    //Claim outbound socket
-    /*int socket_send = socket(AF_INET, SOCK_DGRAM, 0);
-    if (socket_send < 0)
-    {
-        printf("socket() error: %s.\n", strerror(errno));
-        return -1;
-    }*/
-
     //make listen address (any)
     struct sockaddr_in listen_address;
     memset(&listen_address, 0, sizeof(listen_address));
     listen_address.sin_family = AF_INET;
     listen_address.sin_addr.s_addr = htonl(INADDR_ANY);
-    listen_address.sin_port = htons(32000);
-
-    //make server address
-	struct sockaddr_in server_address;
-	memset(&server_address, 0, sizeof(server_address));
-	server_address.sin_family = AF_INET;
-	server_address.sin_addr.s_addr = inet_addr("127.0.0.1");
-	server_address.sin_port = htons(32000);
-
+    listen_address.sin_port = htons(32001);
     //Attempt to bind to address
-    if (isClient == 0) {
-        int retBind = bind(socket_listen, (struct sockaddr *) &listen_address, sizeof(listen_address));
-        if (retBind < 0) {
-            printf("bind() error: %s.\n", strerror(errno));
-            return -1;
-        } else {
-            printf("Successfully bound to socket...\n");
-        }
+    int retBind = bind(socket_listen, (struct sockaddr *) &listen_address, sizeof(listen_address));
+    if (retBind < 0) {
+        printf("bind() error: %s.\n", strerror(errno));
+        return -1;
+    } else {
+        printf("Successfully bound to socket...\n");
     }
+
+    //SENDING
+    //Claim socket
+    socket_send = socket(AF_INET, SOCK_DGRAM, 0);
+    if (socket_send < 0)
+    {
+        printf("socket() error: %s.\n", strerror(errno));
+        return -1;
+    }
+    //make remote address
+    struct sockaddr_in remote_addr;
+    memset(&remote_addr, 0, sizeof(remote_addr));
+    remote_addr.sin_family = AF_INET;
+    remote_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+    remote_addr.sin_port = htons(32000);
+
 
     //Run the server
     char message_buffer[1024];
     struct sockaddr_in client_address;
     while (1) {
-
-    	//Client sends message first
-    	if (isClient) {
-    		fgets(message_buffer, sizeof(message_buffer), stdin);
-
-			int ret = sendto(socket_listen, 
-				message_buffer, 
-				sizeof(message_buffer), 
-				0,
-				(struct sockaddr *) &server_address,
-				sizeof(server_address));
-
-			if (ret <= 0)
-			{
-				printf("recvfrom() error: %s.\n", strerror(errno));
-				return -1;
-			}
-    	}
 
     	//Listen for message from client
         socklen_t len = sizeof(client_address);
@@ -104,7 +77,6 @@ int main(int argc, char *argv[]) {
             0,
             (struct sockaddr *) &client_address,
             &len);
-
         //Error message
         if (retRecv <= 0) {
             printf("recvfrom() error: %s.\n", strerror(errno));
@@ -115,20 +87,36 @@ int main(int argc, char *argv[]) {
         char* srcAddress = inet_ntoa(client_address.sin_addr);
         printf("[from %s] %s\n", srcAddress, message_buffer);
 
-        /*
+        //Prepare response
+        bool correctFormat = true;
+        char* expect = "you->server#";
+        for(int i=0; i<retRecv && i<12; i++) {
+            if (message_buffer[i] != expect[i]) {
+                correctFormat = false;
+                break;
+            }
+        }
+        if (correctFormat) {
+            expect = "server->you#";
+            for(int i=0; i<12; i++) {
+                message_buffer[i] = expect[i];
+            }
+        } else {
+            sprintf(message_buffer,"server->you#ERROR: Unrecognized message format\n");
+        }
+
         //Respond
-        int retSnd = sendto(socket_listen, 
+        int retSnd = sendto(socket_send, 
 			message_buffer, 
 			sizeof(message_buffer), 
 			0,
-			(struct sockaddr *) &server_address,
-			sizeof(server_address));
-
+			(struct sockaddr *) &remote_addr,
+			sizeof(remote_addr));
 		if (retSnd <= 0)
 		{
 			printf("recvfrom() error: %s.\n", strerror(errno));
 			return -1;
-		}*/
+		}
     }
 
     return 0;
