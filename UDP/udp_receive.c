@@ -101,6 +101,14 @@ int main(int argc, char *argv[]) {
             for(int i=0; i<12; i++) {
                 message_buffer[i] = expect[i];
             }
+
+            //Write actual message to file
+            char actualMesssage[1012];
+            memcpy(actualMesssage, &message_buffer[12], 1012);
+            FILE* clientMessagesFP = fopen("clientMessages.txt", "a");
+            fprintf(clientMessagesFP, "(%s:3200)->server#%s", srcAddress, actualMesssage);
+            fclose(clientMessagesFP);
+
         } else {
             sprintf(message_buffer,"server->you#ERROR: Unrecognized message format\n");
         }
