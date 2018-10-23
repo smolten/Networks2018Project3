@@ -83,10 +83,6 @@ int main(int argc, char *argv[]) {
             return -1;
         }
 
-        //Print message
-        char* srcAddress = inet_ntoa(client_address.sin_addr);
-        printf("[from %s] %s\n", srcAddress, message_buffer);
-
         //Prepare response
         bool correctFormat = true;
         char* expect = "you->server#";
@@ -97,6 +93,7 @@ int main(int argc, char *argv[]) {
             }
         }
         if (correctFormat) {
+            //Change you->server to server->you
             expect = "server->you#";
             for(int i=0; i<12; i++) {
                 message_buffer[i] = expect[i];
@@ -105,11 +102,13 @@ int main(int argc, char *argv[]) {
             //Write actual message to file
             char actualMesssage[1012];
             memcpy(actualMesssage, &message_buffer[12], 1012);
+            char* srcAddress = inet_ntoa(client_address.sin_addr);
             FILE* clientMessagesFP = fopen("clientMessages.txt", "a");
             fprintf(clientMessagesFP, "(%s:3200)->server#%s", srcAddress, actualMesssage);
             fclose(clientMessagesFP);
 
         } else {
+            //send error message
             sprintf(message_buffer,"server->you#ERROR: Unrecognized message format\n");
         }
 

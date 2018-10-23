@@ -1,19 +1,12 @@
-udp: udp_rcv udp_snd
+udp: udp_receive udp_send
 
-udp_rcv: udp_receive.o
-	gcc -o udp_rcv udp_receive.o
+udp_receive: udp_receive.o
+	gcc ./udp_receive.c -o udp_receive
 
-udp_receive.o: udp_receive.c
-	gcc -c udp_receive.c
-
-udp_snd: udp_send.o
-	gcc -o udp_snd udp_send.o
-
-udp_send.o: udp_send.c
-	gcc -c udp_send.c
+udp_send: udp_send.o
+	gcc ./udp_send.c -o udp_send
 
 clean:
-	rm *.o
-	rm a.out
-	rm udp_snd
-	rm udp_rcv
+	-rm *.o
+	-rm udp_send
+	-rm udp_receive
